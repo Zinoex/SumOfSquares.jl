@@ -4,26 +4,35 @@ function matrix_cone(::Type{COI.HermitianPositiveSemidefiniteConeTriangle}, d)
     return COI.HermitianPositiveSemidefiniteConeTriangle(d)
 end
 
-function vectorized_matrix(Q, basis, ::Type, ::Type)
-    return MultivariateMoments.SymMatrix(Q, basis)
+function vectorized_matrix(Q, n, cone::MCT, ::Type) where {MCT<:SparseDiagonallyDominantCone}
+    if isnothing(cone.nonzero)
+        return MultivariateMoments.SymMatrix(Q, n)
+    else
+        return SparseSymMatrix(Q, cone.nonzero, n)
+    end
 end
+
+function vectorized_matrix(Q, n, cone, ::Type)
+    return MultivariateMoments.SymMatrix(Q, n)
+end
+
 function vectorized_matrix(
     Q,
-    basis,
-    ::Type{COI.HermitianPositiveSemidefiniteConeTriangle},
+    n,
+    ::COI.HermitianPositiveSemidefiniteConeTriangle,
     T::Type,
 )
-    return MultivariateMoments.VectorizedHermitianMatrix{eltype(Q),T}(Q, basis)
+    return MultivariateMoments.VectorizedHermitianMatrix{eltype(Q),T}(Q, n)
 end
 function vectorized_matrix(
     Q,
-    basis,
-    ::Type{COI.HermitianPositiveSemidefiniteConeTriangle},
+    n,
+    ::COI.HermitianPositiveSemidefiniteConeTriangle,
     ::Type{Complex{T}},
 ) where {T}
     return vectorized_matrix(
         Q,
-        basis,
+        n,
         COI.HermitianPositiveSemidefiniteConeTriangle,
         T,
     )
@@ -33,11 +42,11 @@ end
 function build_gram_matrix(
     q::Vector,
     basis::AbstractPolynomialBasis,
-    matrix_cone_type,
+    cone,
     T::Type,
 )
     n = length(basis)
-    Q = vectorized_matrix(q, length(basis), matrix_cone_type, T)
+    Q = vectorized_matrix(q, n, cone, T)
     U = _promote_sum(eltype(Q), T)
     #    N = MOI.dimension(MOI.PositiveSemidefiniteConeTriangle(n))
     #    if length(q) != N
@@ -92,12 +101,12 @@ function build_matrix(
     ]
 end
 
-function build_gram_matrix(Q::Function, bases::Vector, matrix_cone_type, T)
+function build_gram_matrix(Q::Function, bases::Vector, cone, T)
     return SparseGramMatrix(
         build_matrix(
             Q,
             bases,
-            (Q, b) -> build_gram_matrix(Q, b, matrix_cone_type, T),
+            (Q, b) -> build_gram_matrix(Q, b, cone, T),
         ),
     )
 end
@@ -110,33 +119,66 @@ end
 
 function union_constraint_indices_types(MCT)
     return Union{
-        MOI.ConstraintIndex{MOI.VectorOfVariables,typeof(matrix_cone(MCT, 0))},
-        MOI.ConstraintIndex{MOI.VectorOfVariables,typeof(matrix_cone(MCT, 1))},
-        MOI.ConstraintIndex{MOI.VectorOfVariables,typeof(matrix_cone(MCT, 2))},
-        MOI.ConstraintIndex{MOI.VectorOfVariables,typeof(matrix_cone(MCT, 3))},
+        MOI.ConstraintIndex{MOI.VectorOfVariables,matrix_cone_type(MCT, 0)},
+        MOI.ConstraintIndex{MOI.VectorOfVariables,matrix_cone_type(MCT, 1)},
+        MOI.ConstraintIndex{MOI.VectorOfVariables,matrix_cone_type(MCT, 2)},
+        MOI.ConstraintIndex{MOI.VectorOfVariables,matrix_cone_type(MCT, 3)},
     }
 end
 
+basis_product(basis::AbstractMultipleOrthogonalBasis, j, i) = basis.polynomials[j] * basis.polynomials[i]
+basis_product(basis::MonomialBasis, j, i) = basis.monomials[j] * basis.monomials[i]
+
+# Since we only need the monomials of the product, it is okay to ignore the scaling.
+# However, it would be useful if MultivariateBases exported a basis_product.
+basis_product(basis::ScaledMonomialBasis, j, i) = basis.monomials[j] * basis.monomials[i]
+
+function sparse_matrix_cone(matrix_cone_type::Type{<:SparseDiagonallyDominantCone}, basis, poly_monomials)
+    if isnothing(poly_monomials)
+        nonzero = nothing
+    else
+        nonzero = []
+
+        for j in 1:length(basis)
+            for i in 1:j
+                prod = basis_product(basis, i, j)
+                monomials = MP.monomials(prod)
+
+                if any(mono -> mono in poly_monomials, monomials)
+                    k = div((j - 1) * j, 2) + i
+                    push!(nonzero, k)
+                end
+            end
+        end
+    end
+
+    return matrix_cone(matrix_cone_type, length(basis), nonzero)
+end
+
+sparse_matrix_cone(matrix_cone_type, basis, poly_monomials) = matrix_cone(matrix_cone_type, length(basis))
+    
 function add_gram_matrix(
     model::MOI.ModelLike,
     matrix_cone_type::Type,
     basis::AbstractPolynomialBasis,
-    T::Type,
+    T::Type;
+    poly_monomials::Union{AbstractVector, Nothing}=nothing
 )
-    Q, cQ = MOI.add_constrained_variables(
-        model,
-        matrix_cone(matrix_cone_type, length(basis)),
-    )
-    q = build_gram_matrix(Q, basis, matrix_cone_type, T)
+    cone = sparse_matrix_cone(matrix_cone_type, basis, poly_monomials)
+    Q, cQ = MOI.add_constrained_variables(model, cone)
+
+    q = build_gram_matrix(Q, basis, cone, T)
     return q, Q, cQ
 end
+
 _first(b::AbstractPolynomialBasis) = b
 _first(b::Vector) = first(b)
 function add_gram_matrix(
     model::MOI.ModelLike,
     matrix_cone_type::Type,
     bases::Vector,
-    T::Type,
+    T::Type;
+    poly_monomials::Union{AbstractVector, Nothing}=nothing
 )
     Qs = Vector{Vector{MOI.VariableIndex}}(undef, length(bases))
     cQs = Vector{union_constraint_indices_types(matrix_cone_type)}(
@@ -151,10 +193,8 @@ function add_gram_matrix(
         if i != cur
             @assert i == cur + 1
             cur = i
-            Qs[i], cQs[i] = MOI.add_constrained_variables(
-                model,
-                matrix_cone(matrix_cone_type, length(_first(bases[i]))),
-            )
+            cone = sparse_matrix_cone(matrix_cone_type, _first(bases[i]), nothing)
+            Qs[i], cQs[i] = MOI.add_constrained_variables(model, cone)
         end
         return Qs[i]
     end

@@ -55,7 +55,7 @@ function MOI.Bridges.Constraint.bridge_constraint(
         s.certificate,
         SOS.Certificate.with_variables(r, s.domain),
     )
-    g, Q, cQ = SOS.add_gram_matrix(model, MCT, gram_basis, T)
+    g, Q, cQ = SOS.add_gram_matrix(model, MCT, gram_basis, T; poly_monomials=MP.monomials(r))
     # MOI does not modify the coefficients of the functions so we can modify `r`.
     # without altering `f`.
     q = MA.operate!!(-, r, g)

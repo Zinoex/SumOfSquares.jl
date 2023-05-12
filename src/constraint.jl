@@ -1,6 +1,6 @@
 export certificate_basis,
     certificate_monomials, gram_matrix, lagrangian_multipliers
-export NonnegPolyInnerCone, DSOSCone, SDSOSCone, SOSCone
+export NonnegPolyInnerCone, DSOSCone, SparseDSOSCone, SDSOSCone, SOSCone
 export PSDMatrixInnerCone, SOSMatrixCone
 export ConvexPolyInnerCone, SOSConvexCone
 
@@ -60,6 +60,11 @@ ArXiv e-prints, **2017**.
 const DSOSCone = NonnegPolyInnerCone{DiagonallyDominantConeTriangle}
 function JuMP.in_set_string(print_mode::MIME, ::DSOSCone)
     return _wrap(print_mode, "is DSOS")
+end
+
+const SparseDSOSCone = NonnegPolyInnerCone{SparseDiagonallyDominantCone}
+function JuMP.in_set_string(print_mode::MIME, ::SparseDSOSCone)
+    return _wrap(print_mode, "is SparseDSOSCone")
 end
 
 function JuMP.reshape_set(set::SOSPolynomialSet, ::PolyJuMP.PolynomialShape)
@@ -298,6 +303,13 @@ function PolyJuMP.bridges(
     ::Type{<:DiagonallyDominantConeTriangle},
 )
     return [Bridges.Constraint.DiagonallyDominantBridge]
+end
+
+function PolyJuMP.bridges(
+    ::Type{<:MOI.AbstractVectorFunction},
+    ::Type{<:SparseDiagonallyDominantCone},
+)
+    return [Bridges.Constraint.SparseDiagonallyDominantBridge]
 end
 
 function PolyJuMP.bridges(

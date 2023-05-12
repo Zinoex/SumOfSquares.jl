@@ -44,6 +44,7 @@ import MathOptInterface as MOI
 
 Reexport.@reexport using PolyJuMP
 
+include("sparse_symmatrix.jl")
 include("attributes.jl")
 include("psd2x2.jl")
 include("diagonally_dominant.jl")

@@ -24,6 +24,21 @@ function matrix_cone(
     end
 end
 
+function matrix_cone_type(
+    S::Type{<:MOI.AbstractSymmetricMatrixSetTriangle},
+    side_dimension,
+)
+    if iszero(side_dimension)
+        return EmptyCone
+    elseif isone(side_dimension)
+        return MOI.Nonnegatives
+    elseif side_dimension == 2
+        return PositiveSemidefinite2x2ConeTriangle
+    else
+        return S
+    end
+end
+
 """
     struct DiagonallyDominantConeTriangle <: MOI.AbstractSymmetricMatrixSetTriangle
         side_dimension::Int
@@ -47,6 +62,52 @@ function matrix_cone(S::Type{DiagonallyDominantConeTriangle}, side_dimension)
     else
         # With `side_dimension` = 2, we want to avoid using SOC and only use LP
         return S(side_dimension)
+    end
+end
+
+function matrix_cone_type(S::Type{DiagonallyDominantConeTriangle}, side_dimension)
+    if iszero(side_dimension)
+        return EmptyCone
+    elseif isone(side_dimension)
+        return MOI.Nonnegatives
+    else
+        return S
+    end
+end
+
+struct SparseDiagonallyDominantCone <: MOI.AbstractVectorSet
+    side_dimension::Int
+    nonzero::Union{Nothing, Vector{Int}}
+end
+SparseDiagonallyDominantCone(side_dimension) = SparseDiagonallyDominantCone(side_dimension, nothing)
+
+function MOI.dimension(s::SparseDiagonallyDominantCone)
+    if isnothing(s.nonzero)
+        d = s.side_dimension
+        return div(d * (d + 1), 2)
+    else 
+        return length(s.nonzero)
+    end
+end
+
+function matrix_cone(S::Type{SparseDiagonallyDominantCone}, side_dimension, nonzero)
+    if iszero(side_dimension)
+        return EmptyCone()
+    elseif isone(side_dimension)
+        return MOI.Nonnegatives(1)
+    else
+        # With `side_dimension` = 2, we want to avoid using SOC and only use LP
+        return S(side_dimension, nonzero)
+    end
+end
+
+function matrix_cone_type(S::Type{SparseDiagonallyDominantCone}, side_dimension)
+    if iszero(side_dimension)
+        return EmptyCone
+    elseif isone(side_dimension)
+        return MOI.Nonnegatives
+    else
+        return S
     end
 end
 
@@ -81,11 +142,27 @@ function matrix_cone(
     end
 end
 
+function matrix_cone_type(
+    S::Type{ScaledDiagonallyDominantConeTriangle},
+    side_dimension,
+)
+    if iszero(side_dimension)
+        return EmptyCone
+    elseif isone(side_dimension)
+        return MOI.Nonnegatives
+    elseif side_dimension == 2
+        return PositiveSemidefinite2x2ConeTriangle
+    else
+        return S
+    end
+end
+
 # isbits types, nothing to copy
 function Base.copy(
     set::Union{
         DiagonallyDominantConeTriangle,
         ScaledDiagonallyDominantConeTriangle,
+        SparseDiagonallyDominantCone,
     },
 )
     return set

@@ -10,9 +10,13 @@ _promote_add_mul(T::Type) = MA.promote_operation(MA.add_mul, T, T, T)
 function _promote_add_mul(::Type{MOI.VariableIndex})
     return MOI.ScalarQuadraticFunction{Float64}
 end
-function MP.polynomial(p::GramMatrix{MOI.VariableIndex,B,U}) where {B,U}
+function MP.polynomial(p::GramMatrix{MOI.VariableIndex,B,U,MT}) where {B,U,MT<:SymMatrix}
     Q = convert(Vector{U}, p.Q.Q)
     return MP.polynomial(GramMatrix(SymMatrix(Q, p.Q.n), p.basis))
+end
+function MP.polynomial(p::GramMatrix{MOI.VariableIndex,B,U,MT}) where {B,U,MT<:SparseSymMatrix}
+    Q = convert(Vector{U}, p.Q.Q)
+    return MP.polynomial(GramMatrix(SparseSymMatrix(Q, p.Q.nonzero, p.Q.n), p.basis))
 end
 #function MP.polynomial(p::GramMatrix{F}) where {F <: MOI.AbstractFunction}
 #    MP.polynomial(p, MOI.Utilities.promote_operation(+, Float64, F, F))

@@ -14,7 +14,7 @@ function JuMP.value(p::GramMatrix{<:JuMP.AbstractJuMPScalar})
     return GramMatrix(map(JuMP.value, p.Q), p.basis)
 end
 
-for poly in (:DSOSPoly, :SDSOSPoly, :SOSPoly)
+for poly in (:DSOSPoly, :SparseDSOSPoly, :SDSOSPoly, :SOSPoly)
     @eval begin
         struct $poly{PB<:AbstractPolynomialBasis} <: PolyJuMP.AbstractPoly
             polynomial_basis::PB
@@ -25,9 +25,10 @@ end
 
 matrix_cone_type(::SOSPoly) = MOI.PositiveSemidefiniteConeTriangle
 matrix_cone_type(::DSOSPoly) = DiagonallyDominantConeTriangle
+matrix_cone_type(::SparseDSOSPoly) = SparseDiagonallyDominantCone
 matrix_cone_type(::SDSOSPoly) = ScaledDiagonallyDominantConeTriangle
 
-const PosPoly{PB} = Union{DSOSPoly{PB},SDSOSPoly{PB},SOSPoly{PB}}
+const PosPoly{PB} = Union{DSOSPoly{PB}, SparseDSOSPoly{PB}, SDSOSPoly{PB},SOSPoly{PB}}
 
 function moi_add_variable(
     model::MOI.ModelLike,
@@ -69,6 +70,8 @@ function JuMP.add_variable(
     JuMP.add_bridge(model, Bridges.Constraint.EmptyBridge)
     JuMP.add_bridge(model, Bridges.Constraint.PositiveSemidefinite2x2Bridge)
     JuMP.add_bridge(model, Bridges.Constraint.DiagonallyDominantBridge)
+    JuMP.add_bridge(model, Bridges.Constraint.SparseDiagonallyDominantBridge)
+
     Q = moi_add_variable(backend(model), set, v.binary, v.integer)
     return build_gram_matrix(
         JuMP.VariableRef[JuMP.VariableRef(model, vi) for vi in Q],
