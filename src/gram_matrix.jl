@@ -62,6 +62,7 @@ function GramMatrix(
     Q::Union{
         MultivariateMoments.SymMatrix{T},
         MultivariateMoments.VectorizedHermitianMatrix{T},
+        SparseSymMatrix{T}
     },
     basis::AbstractPolynomialBasis,
 ) where {T}
